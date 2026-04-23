@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - Documents</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <nav>
+    <span class="brand">&#9881; CarSeva</span>
+    <a href="index.html" id="logoutBtn">Sign Out</a>
+  </nav>
+
+  <div class="page top">
+    <div class="card wide">
+      <div class="dash-header">
+        <div>
+          <h1>Vehicle Documents</h1>
+          <p class="text-muted-sm" id="vehicleInfo"></p>
+        </div>
+        <div class="actions-row">
+          <a href="vehicles.html" class="btn btn-outline">Back to Vehicles</a>
+          <button type="button" class="btn btn-secondary" id="uploadBtn">&#43; Upload Document</button>
+        </div>
+      </div>
+
+      <div class="alert alert-success" id="successAlert">&#10003; Document uploaded successfully!</div>
+
+      <div class="alert alert-error" id="errorAlert">
+        <span id="errorMessage"></span>
+      </div>
+
+      <form id="uploadForm" class="inline-panel" novalidate>
+        <h3 class="inline-panel-title">Upload Document</h3>
+
+        <div class="form-group">
+          <label for="documentType">Document Type</label>
+          <select id="documentType">
+            <option value="" disabled selected>Select document type</option>
+            <option value="Insurance">Insurance Certificate</option>
+            <option value="Registration">Registration Document</option>
+            <option value="PollutionCertificate">Pollution Certificate</option>
+            <option value="ServiceRecords">Service Records</option>
+            <option value="OwnershipProof">Ownership Proof</option>
+            <option value="Other">Other</option>
+          </select>
+          <span class="error-msg" id="typeError">Please select document type.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="documentFile">Select File (PDF, JPG, PNG, DOC, DOCX - Max 6MB)</label>
+          <input type="file" id="documentFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
+          <span class="error-msg" id="fileError">Please select a valid file.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="documentExpiry">Expiry Date (Optional but recommended)</label>
+          <input type="date" id="documentExpiry" />
+        </div>
+
+        <div class="section-actions">
+          <button type="button" class="btn btn-outline" id="cancelUploadBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Upload Document</button>
+        </div>
+      </form>
+
+      <div class="section-title">Uploaded Documents</div>
+      <div id="documentsList"></div>
+    </div>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script>
+    const user = JSON.parse(localStorage.getItem('cc_user') || 'null');
+    const token = localStorage.getItem('cc_token');
+    if (!user || !token) window.location.href = 'index.html';
+
+    const params = new URLSearchParams(window.location.search);
+    const vehicleId = params.get('vehicleId');
+    const vehicleName = params.get('vehicleName');
+    const vehicleNumber = params.get('vehicleNumber');
+    const isAdminView = user && (user.role === 'mechanic' || user.role === 'admin');
+
+    if (!vehicleId && !vehicleNumber) {
+      window.location.href = 'vehicles.html';
+    }
+
+    const form = document.getElementById('uploadForm');
+    const documentsList = document.getElementById('documentsList');
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+
+    document.getElementById('vehicleInfo').textContent = decodeURIComponent(vehicleName || vehicleNumber || '');
+
+    if (isAdminView) {
+      document.getElementById('uploadBtn').style.display = 'none';
+      const backLink = document.querySelector('a[href="vehicles.html"]');
+      if (backLink) {
+        backLink.setAttribute('href', 'admin.html');
+        backLink.textContent = 'Back to Workbench';
+      }
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      CarSevaStore.logout();
+      window.location.href = 'index.html';
+    });
+
+    document.getElementById('uploadBtn').addEventListener('click', function () {
+      form.style.display = 'block';
+      form.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    document.getElementById('cancelUploadBtn').addEventListener('click', function () {
+      form.style.display = 'none';
+      form.reset();
+    });
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showError(msg) {
+      errorAlert.classList.add('show');
+      document.getElementById('errorMessage').textContent = msg;
+      successAlert.classList.remove('show');
+      errorAlert.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function showSuccess(msg) {
+      successAlert.textContent = msg;
+      successAlert.classList.add('show');
+      errorAlert.classList.remove('show');
+      form.reset();
+      form.style.display = 'none';
+      loadDocuments();
+    }
+
+    function loadDocuments() {
+      const docs = CarSevaStore.listDocuments(user, vehicleId, vehicleNumber);
+
+      if (docs.length === 0) {
+        documentsList.innerHTML = '<div class="empty-state"><div class="icon">&#128196;</div><p>No documents uploaded yet. Upload documents to organize your vehicle documents.</p></div>';
+        return;
+      }
+
+      documentsList.innerHTML = docs.map(function (doc) {
+        const uploadDate = new Date(doc.uploadedAt).toLocaleDateString('en-IN');
+        return `
+          <div class="booking-item">
+            <div class="booking-info">
+              <strong>${escHtml(doc.documentType)}</strong>
+              <div class="booking-details">
+                <span>File: ${escHtml(doc.fileName)}</span>
+                <span>Date: ${uploadDate}</span>
+                <span>Expiry: ${escHtml(doc.expiryDate || 'Not set')}</span>
+              </div>
+            </div>
+            <div class="actions-row-tight">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="download" data-id="${doc.id}">Download</button>
+              ${isAdminView ? '' : `<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${doc.id}" data-file="${escHtml(doc.fileName)}">Delete</button>`}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      documentsList.querySelectorAll('button[data-action]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const action = button.getAttribute('data-action');
+          const id = button.getAttribute('data-id');
+          const file = button.getAttribute('data-file') || '';
+
+          if (action === 'download') {
+            downloadDocument(id);
+          } else if (action === 'delete') {
+            deleteDocument(id, file);
+          }
+        });
+      });
+    }
+
+    window.downloadDocument = function (id) {
+      try {
+        const documentData = CarSevaStore.getDocument(user, id);
+        const link = document.createElement('a');
+        link.href = documentData.dataUrl;
+        link.download = documentData.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (error) {
+        showError(error.message || 'Unable to download document.');
+      }
+    };
+
+    window.deleteDocument = function (id, fileName) {
+      if (isAdminView) return;
+      if (!confirm(`Are you sure you want to delete "${fileName}"?`)) return;
+      try {
+        CarSevaStore.deleteDocument(user, id);
+        showSuccess('Document deleted successfully.');
+      } catch (error) {
+        showError(error.message || 'Unable to delete document.');
+      }
+    };
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      const docType = document.getElementById('documentType').value.trim();
+      const fileInput = document.getElementById('documentFile');
+      const expiryDate = document.getElementById('documentExpiry').value;
+      let valid = true;
+
+      if (!docType) {
+        document.getElementById('typeError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('typeError').style.display = 'none';
+      }
+
+      if (!fileInput.files || fileInput.files.length === 0) {
+        document.getElementById('fileError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('fileError').style.display = 'none';
+      }
+
+      if (!valid) return;
+
+      try {
+        if (isAdminView) {
+          throw new Error('Mechanic view is read-only for documents.');
+        }
+        await CarSevaStore.addDocument(user, vehicleId, docType, fileInput.files[0], expiryDate);
+        showSuccess('Document uploaded successfully.');
+      } catch (error) {
+        showError(error.message || 'Upload failed');
+      }
+    });
+
+    loadDocuments();
+  </script>
+
+</body>
+</html>

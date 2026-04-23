@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - Book Service</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <nav>
+    <span class="brand">&#9881; CarSeva</span>
+    <a href="index.html" id="logoutBtn">Sign Out</a>
+  </nav>
+
+  <div class="page top">
+    <div class="card wide booking-shell">
+      <a href="dashboard.html" class="back-link">&#8592; Back to Dashboard</a>
+
+      <div class="booking-hero">
+        <div>
+          <h1>Schedule Service</h1>
+          <p class="sub left-align no-margin">
+            Compare services, pick a nearby center, and confirm your slot with instant pricing.
+          </p>
+        </div>
+        <div class="pricing-pill" id="estimatePill">Select a service to view estimate</div>
+      </div>
+
+      <div class="alert alert-success" id="successAlert">
+        &#10003; Booking Successful! Redirecting to confirmation...
+      </div>
+
+      <div class="section-title">Service Catalog</div>
+      <div class="catalog-toolbar">
+        <input type="search" id="serviceSearch" placeholder="Search services" />
+        <select id="serviceFilter">
+          <option value="all">All categories</option>
+        </select>
+      </div>
+      <div class="catalog-grid" id="serviceCatalog"></div>
+      <span class="error-msg" id="serviceError">Please select a service type.</span>
+
+      <form id="bookingForm" novalidate>
+        <div class="section-title section-gap">Vehicle And Slot</div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="vehicleSelect">Registered Vehicle</label>
+            <select id="vehicleSelect">
+              <option value="" selected>Select a registered vehicle</option>
+            </select>
+            <span class="error-msg" id="vehicleSelectError">Please select one of your registered vehicles.</span>
+            <p class="sub top-gap-sm" id="vehicleHelp">Choose from vehicles you already added in My Vehicles.</p>
+          </div>
+
+          <div class="form-group">
+            <label for="vehicleName">Vehicle Name</label>
+            <input type="text" id="vehicleName" placeholder="Auto-filled from selected vehicle" readonly />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="vehicleNumber">Vehicle Number (Indian Plate)</label>
+            <input type="text" id="vehicleNumber" placeholder="Auto-filled from selected vehicle" readonly />
+            <span class="error-msg" id="vehicleNumberError">Please enter a valid vehicle number.</span>
+          </div>
+          <div class="form-group"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="plateImage">Upload Number Plate Image (OCR)</label>
+          <input type="file" id="plateImage" accept="image/*" />
+          <div class="helper-stack">
+            <button type="button" class="btn btn-secondary" id="scanPlateBtn">Scan Plate</button>
+            <span class="sub left-align no-margin" id="ocrStatus">Upload an image and click Scan Plate.</span>
+          </div>
+        </div>
+
+        <div class="form-row form-row-3">
+          <div class="form-group">
+            <label for="date">Appointment Date</label>
+            <input type="date" id="date" />
+            <span class="error-msg" id="dateError">Please select a valid future date.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="timeSlot">Time Slot</label>
+            <select id="timeSlot">
+              <option value="" selected>Select a time</option>
+            </select>
+            <span class="error-msg" id="timeError">Please select an available time slot.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="locationFilter">Preferred City</label>
+            <select id="locationFilter">
+              <option value="all">All cities</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="notes">Booking Notes</label>
+          <input type="text" id="notes" placeholder="Optional note for the service advisor" />
+        </div>
+
+        <div class="section-title section-gap">Service Centers</div>
+        <div class="center-grid" id="serviceCenters"></div>
+        <span class="error-msg" id="centerError">Please choose a service center.</span>
+
+        <div class="section-title section-gap">Estimated Cost</div>
+        <div class="cost-card" id="costCard">
+          <div>
+            <div class="cost-card-label">No service selected</div>
+            <strong id="costServiceName">Choose a service from the catalog</strong>
+          </div>
+          <div class="cost-breakdown">
+            <span>Base</span>
+            <strong id="costBase">Rs. 0</strong>
+            <span>GST (18%)</span>
+            <strong id="costTax">Rs. 0</strong>
+            <span>Total</span>
+            <strong id="costTotal">Rs. 0</strong>
+          </div>
+        </div>
+        <div class="update-panel" id="heuristicPanel">
+          <div class="section-title">Heuristic Price Logic</div>
+          <div class="booking-list" id="heuristicList"></div>
+        </div>
+
+        <div class="section-actions">
+          <a href="dashboard.html" class="btn btn-outline">Cancel</a>
+          <button type="submit" class="btn btn-primary grow">Confirm Booking</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script src="node_modules/tesseract.js/dist/tesseract.min.js"></script>
+  <script>
+    const user = JSON.parse(localStorage.getItem('cc_user') || 'null');
+    const token = localStorage.getItem('cc_token');
+
+    if (!user || !token) {
+      window.location.href = 'index.html';
+    }
+
+    if (user.role !== 'customer') {
+      alert('Only customers can create bookings.');
+      window.location.href = 'dashboard.html';
+    }
+
+    const catalog = CarSevaStore.getServiceCatalog();
+    const centers = CarSevaStore.getServiceCenters();
+    const vehicles = CarSevaStore.listVehicles(user);
+    const dateInput = document.getElementById('date');
+    const timeSlotInput = document.getElementById('timeSlot');
+    const locationFilterInput = document.getElementById('locationFilter');
+    const searchInput = document.getElementById('serviceSearch');
+    const categoryFilterInput = document.getElementById('serviceFilter');
+    const vehicleSelectInput = document.getElementById('vehicleSelect');
+    const vehicleNameInput = document.getElementById('vehicleName');
+    const vehicleNumberInput = document.getElementById('vehicleNumber');
+    const vehicleHelp = document.getElementById('vehicleHelp');
+    const submitButton = document.querySelector('#bookingForm button[type="submit"]');
+
+    const state = {
+      selectedServiceId: '',
+      selectedCenterId: '',
+      selectedDate: '',
+      selectedVehicleId: '',
+      latestQuote: null
+    };
+
+    const slotTemplates = [
+      { value: 'Early Morning (7:00 AM - 9:00 AM)', cutoffHour: 6 },
+      { value: 'Morning (9:00 AM - 11:00 AM)', cutoffHour: 8 },
+      { value: 'Afternoon (12:00 PM - 2:00 PM)', cutoffHour: 11 },
+      { value: 'Evening (3:00 PM - 5:00 PM)', cutoffHour: 14 },
+      { value: 'Late Evening (6:00 PM - 8:00 PM)', cutoffHour: 17 }
+    ];
+
+    const today = new Date();
+    dateInput.setAttribute('min', today.toISOString().split('T')[0]);
+
+    document.getElementById('logoutBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      CarSevaStore.logout();
+      window.location.href = 'index.html';
+    });
+
+    document.getElementById('bookingForm').addEventListener('submit', submitBooking);
+    document.getElementById('scanPlateBtn').addEventListener('click', scanPlateFromImage);
+    searchInput.addEventListener('input', renderCatalog);
+    categoryFilterInput.addEventListener('change', renderCatalog);
+    locationFilterInput.addEventListener('change', function () {
+      renderCenters();
+      updateEstimate();
+    });
+    vehicleSelectInput.addEventListener('change', function () {
+      state.selectedVehicleId = vehicleSelectInput.value;
+      applySelectedVehicle();
+      document.getElementById('vehicleSelectError').classList.remove('show');
+      document.getElementById('vehicleNumberError').classList.remove('show');
+      updateEstimate();
+    });
+    dateInput.addEventListener('change', function () {
+      state.selectedDate = dateInput.value;
+      renderTimeSlots();
+      renderCenters();
+      updateEstimate();
+    });
+    timeSlotInput.addEventListener('change', updateEstimate);
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+      }).format(Number(amount || 0));
+    }
+
+    function getSelectedService() {
+      return catalog.find(function (item) { return item.id === state.selectedServiceId; }) || null;
+    }
+
+    function getSelectedCenter() {
+      return centers.find(function (item) { return item.id === state.selectedCenterId; }) || null;
+    }
+
+    function getSelectedVehicle() {
+      return vehicles.find(function (item) { return item.id === state.selectedVehicleId; }) || null;
+    }
+
+    function renderVehicleOptions() {
+      if (!Array.isArray(vehicles) || vehicles.length === 0) {
+        vehicleSelectInput.innerHTML = '<option value="" selected>No vehicles found</option>';
+        vehicleHelp.innerHTML = 'No vehicles registered yet. <a href="vehicles.html">Add a vehicle first</a> and come back.';
+        submitButton.disabled = true;
+        return;
+      }
+
+      vehicleSelectInput.innerHTML = '<option value="" selected>Select a registered vehicle</option>' + vehicles.map(function (vehicle) {
+        return `<option value="${escHtml(vehicle.id)}">${escHtml(vehicle.name)} / ${escHtml(vehicle.vehicleNumber)}</option>`;
+      }).join('');
+      submitButton.disabled = false;
+    }
+
+    function applySelectedVehicle() {
+      const selectedVehicle = getSelectedVehicle();
+      if (!selectedVehicle) {
+        vehicleNameInput.value = '';
+        vehicleNumberInput.value = '';
+        return;
+      }
+      vehicleNameInput.value = selectedVehicle.name || '';
+      vehicleNumberInput.value = selectedVehicle.vehicleNumber || '';
+    }
+
+    function updateEstimate() {
+      const selectedService = getSelectedService();
+      const pill = document.getElementById('estimatePill');
+      const serviceName = document.getElementById('costServiceName');
+      const baseNode = document.getElementById('costBase');
+      const taxNode = document.getElementById('costTax');
+      const totalNode = document.getElementById('costTotal');
+      const selectedVehicle = getSelectedVehicle();
+
+      if (!selectedService) {
+        pill.textContent = 'Select a service to view estimate';
+        serviceName.textContent = 'Choose a service from the catalog';
+        baseNode.textContent = 'Rs. 0';
+        taxNode.textContent = 'Rs. 0';
+        totalNode.textContent = 'Rs. 0';
+        state.latestQuote = null;
+        renderHeuristicBreakdown();
+        return;
+      }
+
+      let quote = null;
+      try {
+        quote = CarSevaStore.getHeuristicQuote({
+          serviceId: selectedService.id,
+          serviceType: selectedService.name,
+          centerId: state.selectedCenterId || '',
+          vehicleId: selectedVehicle ? selectedVehicle.id : '',
+          date: dateInput.value || '',
+          timeSlot: timeSlotInput.value || ''
+        });
+      } catch (error) {
+        quote = null;
+      }
+
+      const base = quote ? Number(quote.predictedBase || selectedService.price) : selectedService.price;
+      const tax = quote ? Number(quote.tax || (base * 0.18)) : Number((selectedService.price * 0.18).toFixed(2));
+      const total = quote ? Number(quote.total || (base + tax)) : Number((selectedService.price + tax).toFixed(2));
+      state.latestQuote = quote;
+
+      const confidenceLabel = quote ? ` / ${(Number(quote.confidence || 0) * 100).toFixed(0)}% confidence` : '';
+      pill.textContent = `${selectedService.name} / ${formatCurrency(total)}${confidenceLabel}`;
+      serviceName.textContent = `${selectedService.name} / ${selectedService.duration}`;
+      animateCurrencyValue(baseNode, base);
+      animateCurrencyValue(taxNode, tax);
+      animateCurrencyValue(totalNode, total);
+      renderHeuristicBreakdown();
+    }
+
+    function renderHeuristicBreakdown() {
+      const list = document.getElementById('heuristicList');
+      if (!state.latestQuote) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">&#129504;</div><p>Select service, vehicle, slot and center to view heuristic prediction.</p></div>';
+        return;
+      }
+
+      const items = Array.isArray(state.latestQuote.adjustments) ? state.latestQuote.adjustments : [];
+      if (items.length === 0) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">&#129504;</div><p>No adjustment rules applied. Base catalog price used.</p></div>';
+        return;
+      }
+
+      list.innerHTML = items.map(function (item) {
+        const directionClass = item.direction === 'down' ? 'status-completed' : 'status-in-progress';
+        const sign = Number(item.amount) >= 0 ? '+' : '-';
+        return `
+          <div class="booking-item animate-enter">
+            <div class="booking-left">
+              <div class="vehicle">${escHtml(item.label)}</div>
+              <div class="meta">
+                <span>Rule: ${escHtml(item.code)}</span>
+              </div>
+            </div>
+            <div class="booking-right">
+              <span class="status-chip ${directionClass}">${sign}${formatCurrency(Math.abs(Number(item.amount || 0)))}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+      revealAnimatedNodes(list);
+    }
+
+    function renderFilters() {
+      const categories = Array.from(new Set(catalog.map(function (item) { return item.category; })));
+      categoryFilterInput.innerHTML = '<option value="all">All categories</option>' + categories.map(function (category) {
+        return `<option value="${escHtml(category)}">${escHtml(category)}</option>`;
+      }).join('');
+
+      const cities = Array.from(new Set(centers.map(function (item) { return item.city; })));
+      locationFilterInput.innerHTML = '<option value="all">All cities</option>' + cities.map(function (city) {
+        return `<option value="${escHtml(city)}">${escHtml(city)}</option>`;
+      }).join('');
+    }
+
+    function renderCatalog() {
+      const catalogNode = document.getElementById('serviceCatalog');
+      const search = searchInput.value.trim().toLowerCase();
+      const category = categoryFilterInput.value;
+
+      const filtered = catalog.filter(function (item) {
+        const searchMatch = !search
+          || item.name.toLowerCase().includes(search)
+          || item.category.toLowerCase().includes(search)
+          || item.description.toLowerCase().includes(search);
+        const categoryMatch = category === 'all' || item.category === category;
+        return searchMatch && categoryMatch;
+      });
+
+      if (filtered.length === 0) {
+        catalogNode.innerHTML = '<div class="empty-state grid-span-all"><div class="icon">&#128269;</div><p>No matching services found.</p></div>';
+        return;
+      }
+
+      catalogNode.innerHTML = filtered.map(function (service) {
+        const selected = service.id === state.selectedServiceId;
+        return `
+          <button type="button" class="catalog-card animate-enter ${selected ? 'catalog-card-selected' : ''}" data-service-id="${service.id}">
+            <span class="catalog-chip">${escHtml(service.category)}</span>
+            <strong>${escHtml(service.name)}</strong>
+            <p>${escHtml(service.description)}</p>
+            <div class="catalog-meta">
+              <span>${formatCurrency(service.price)}</span>
+              <span>${escHtml(service.duration)}</span>
+            </div>
+          </button>
+        `;
+      }).join('');
+      revealAnimatedNodes(catalogNode);
+
+      catalogNode.querySelectorAll('[data-service-id]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          state.selectedServiceId = button.getAttribute('data-service-id');
+          document.getElementById('serviceError').classList.remove('show');
+          updateEstimate();
+          renderCatalog();
+          renderCenters();
+        });
+      });
+    }
+
+    function renderTimeSlots() {
+      const selectedDateValue = dateInput.value;
+      const now = new Date();
+      const isToday = selectedDateValue === now.toISOString().split('T')[0];
+
+      const availableSlots = slotTemplates.filter(function (slot) {
+        return !isToday || now.getHours() < slot.cutoffHour;
+      });
+
+      timeSlotInput.innerHTML = '<option value="">Select a time</option>' + availableSlots.map(function (slot) {
+        return `<option value="${slot.value}">${slot.value}</option>`;
+      }).join('');
+    }
+
+    function renderCenters() {
+      const centersNode = document.getElementById('serviceCenters');
+      const selectedService = getSelectedService();
+      const city = locationFilterInput.value;
+
+      const filteredCenters = centers.filter(function (center) {
+        const cityMatch = city === 'all' || center.city === city;
+        const serviceMatch = !selectedService || center.supportedCategories.includes(selectedService.category);
+        return cityMatch && serviceMatch;
+      });
+
+      if (filteredCenters.length === 0) {
+        centersNode.innerHTML = '<div class="empty-state grid-span-all"><div class="icon">&#128205;</div><p>No service centers match the current filters.</p></div>';
+        return;
+      }
+
+      centersNode.innerHTML = filteredCenters.map(function (center) {
+        const selected = center.id === state.selectedCenterId;
+        return `
+          <button type="button" class="center-card animate-enter ${selected ? 'center-card-selected' : ''}" data-center-id="${center.id}">
+            <strong>${escHtml(center.name)}</strong>
+            <p>${escHtml(center.address)}</p>
+            <div class="center-meta">
+              <span>${escHtml(center.city)} / ${escHtml(center.area)}</span>
+              <span>${center.distanceKm.toFixed(1)} km away</span>
+            </div>
+          </button>
+        `;
+      }).join('');
+      revealAnimatedNodes(centersNode);
+
+      centersNode.querySelectorAll('[data-center-id]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          state.selectedCenterId = button.getAttribute('data-center-id');
+          document.getElementById('centerError').classList.remove('show');
+          renderCenters();
+          updateEstimate();
+        });
+      });
+    }
+
+    async function scanPlateFromImage() {
+      if (state.selectedVehicleId) {
+        document.getElementById('ocrStatus').textContent = 'Registered vehicle selected. OCR is optional.';
+        return;
+      }
+
+      const plateImage = document.getElementById('plateImage').files[0];
+      const ocrStatus = document.getElementById('ocrStatus');
+
+      if (!plateImage) {
+        ocrStatus.textContent = 'Please choose an image first.';
+        return;
+      }
+
+      if (!window.Tesseract) {
+        ocrStatus.textContent = 'OCR library is not available.';
+        return;
+      }
+
+      let worker;
+      ocrStatus.textContent = 'Scanning image...';
+
+      try {
+        worker = await Tesseract.createWorker('eng', 1, {
+          workerPath: 'node_modules/tesseract.js/dist/worker.min.js',
+          corePath: 'node_modules/tesseract.js-core',
+          langPath: './'
+        });
+
+        const result = await worker.recognize(plateImage);
+        const rawText = result && result.data ? result.data.text : '';
+        const plateNumber = CarSevaStore.extractIndianPlateNumber(rawText);
+
+        if (!plateNumber) {
+          ocrStatus.textContent = 'No valid Indian plate detected. Please enter it manually.';
+          return;
+        }
+
+        vehicleNumberInput.value = plateNumber;
+        document.getElementById('vehicleNumberError').classList.remove('show');
+        ocrStatus.textContent = `Detected plate: ${plateNumber}`;
+      } catch (error) {
+        ocrStatus.textContent = 'OCR failed on this image. Please try another image or enter manually.';
+      } finally {
+        if (worker) {
+          await worker.terminate();
+        }
+      }
+    }
+
+    function validateDate(dateValue) {
+      if (!dateValue) return false;
+      const selected = new Date(`${dateValue}T00:00:00`);
+      const baseline = new Date();
+      baseline.setHours(0, 0, 0, 0);
+      return selected >= baseline;
+    }
+
+    function animateCurrencyValue(node, target) {
+      const from = Number(String(node.textContent).replace(/[^0-9.-]/g, '')) || 0;
+      const start = performance.now();
+      const duration = 420;
+      function tick(now) {
+        const p = Math.min(1, (now - start) / duration);
+        const val = from + ((target - from) * p);
+        node.textContent = formatCurrency(val);
+        if (p < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function revealAnimatedNodes(container) {
+      container.querySelectorAll('.animate-enter').forEach(function (node, index) {
+        setTimeout(function () {
+          node.classList.add('is-visible');
+        }, Math.min(260, index * 24));
+      });
+    }
+
+    function submitBooking(e) {
+      e.preventDefault();
+
+      const selectedService = getSelectedService();
+      const selectedCenter = getSelectedCenter();
+      const selectedVehicle = getSelectedVehicle();
+      const vehicleName = selectedVehicle ? String(selectedVehicle.name || '').trim() : '';
+      const vehicleNumber = selectedVehicle ? CarSevaStore.normalizePlate(selectedVehicle.vehicleNumber) : '';
+      const timeSlot = timeSlotInput.value;
+      const date = dateInput.value;
+      const notes = document.getElementById('notes').value.trim();
+
+      ['vehicleSelectError', 'vehicleNumberError', 'serviceError', 'timeError', 'dateError', 'centerError'].forEach(function (id) {
+        document.getElementById(id).classList.remove('show');
+      });
+
+      let valid = true;
+
+      if (!selectedService) {
+        document.getElementById('serviceError').classList.add('show');
+        valid = false;
+      }
+      if (!selectedVehicle) {
+        document.getElementById('vehicleSelectError').classList.add('show');
+        valid = false;
+      }
+      if (!CarSevaStore.isValidIndianPlate(vehicleNumber)) {
+        document.getElementById('vehicleNumberError').classList.add('show');
+        valid = false;
+      }
+      if (!validateDate(date)) {
+        document.getElementById('dateError').classList.add('show');
+        valid = false;
+      }
+      if (!timeSlot) {
+        document.getElementById('timeError').classList.add('show');
+        valid = false;
+      }
+      if (!selectedCenter) {
+        document.getElementById('centerError').classList.add('show');
+        valid = false;
+      }
+
+      if (!valid) return;
+
+      try {
+        CarSevaStore.createBooking(user, {
+          vehicleId: selectedVehicle.id,
+          vehicleName,
+          vehicleNumber,
+          serviceType: selectedService.name,
+          centerId: selectedCenter.id,
+          date,
+          timeSlot,
+          notes
+        });
+
+        document.getElementById('successAlert').classList.add('show');
+        document.getElementById('bookingForm').style.opacity = '0.45';
+        document.getElementById('bookingForm').style.pointerEvents = 'none';
+
+        setTimeout(function () {
+          window.location.href = 'booking-confirmation.html';
+        }, 900);
+      } catch (error) {
+        alert(error.message || 'Unable to create booking.');
+      }
+    }
+
+    renderFilters();
+    renderVehicleOptions();
+    applySelectedVehicle();
+    renderTimeSlots();
+    renderCatalog();
+    renderCenters();
+    updateEstimate();
+  </script>
+</body>
+</html>

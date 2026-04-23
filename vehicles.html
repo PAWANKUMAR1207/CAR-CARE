@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - My Vehicles</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <nav>
+    <span class="brand">&#9881; CarSeva</span>
+    <a href="index.html" id="logoutBtn">Sign Out</a>
+  </nav>
+
+  <div class="page top">
+    <div class="card wide">
+      <div class="dash-header">
+        <div>
+          <h1>My Vehicles</h1>
+          <p class="text-muted-sm">Register, manage, and track your vehicles.</p>
+        </div>
+        <div class="actions-row">
+          <a href="dashboard.html" class="btn btn-outline">Back to Dashboard</a>
+          <button type="button" class="btn btn-secondary" id="addVehicleBtn">&#43; Register Vehicle</button>
+        </div>
+      </div>
+
+      <div class="alert alert-success" id="successAlert">&#10003; Vehicle saved successfully!</div>
+
+      <div class="alert alert-error" id="errorAlert">
+        <span id="errorMessage"></span>
+      </div>
+
+      <form id="vehicleForm" class="inline-panel" novalidate>
+        <h3 class="inline-panel-title">Register New Vehicle</h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="vehicleName">Vehicle Name</label>
+            <input type="text" id="vehicleName" placeholder="e.g. My Car" />
+            <span class="error-msg" id="nameError">Please enter vehicle name.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="vehicleNumber">Number Plate</label>
+            <input type="text" id="vehicleNumber" placeholder="e.g. KA01AB1234" />
+            <span class="error-msg" id="plateError">Please enter valid Indian plate number.</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="brand">Brand</label>
+            <input type="text" id="brand" placeholder="e.g. Toyota" />
+            <span class="error-msg" id="brandError">Please enter brand name.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="model">Model</label>
+            <input type="text" id="model" placeholder="e.g. Camry" />
+            <span class="error-msg" id="modelError">Please enter model name.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="year">Year</label>
+            <input type="number" id="year" placeholder="e.g. 2020" min="1900" max="2099" />
+            <span class="error-msg" id="yearError">Please enter valid year.</span>
+          </div>
+        </div>
+
+        <div class="section-actions">
+          <button type="button" class="btn btn-outline" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Vehicle</button>
+        </div>
+      </form>
+
+      <div class="section-title">Registered Vehicles</div>
+      <div id="vehiclesList"></div>
+    </div>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script>
+    const user = JSON.parse(localStorage.getItem('cc_user') || 'null');
+    const token = localStorage.getItem('cc_token');
+    if (!user || !token) window.location.href = 'index.html';
+
+    const form = document.getElementById('vehicleForm');
+    const vehiclesList = document.getElementById('vehiclesList');
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+
+    document.getElementById('logoutBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      CarSevaStore.logout();
+      window.location.href = 'index.html';
+    });
+
+    document.getElementById('addVehicleBtn').addEventListener('click', function () {
+      form.style.display = 'block';
+      form.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    document.getElementById('cancelBtn').addEventListener('click', function () {
+      form.style.display = 'none';
+      form.reset();
+      delete form.dataset.editId;
+    });
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showError(msg) {
+      errorAlert.classList.add('show');
+      document.getElementById('errorMessage').textContent = msg;
+      successAlert.classList.remove('show');
+      errorAlert.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function showSuccess(msg) {
+      successAlert.textContent = msg;
+      successAlert.classList.add('show');
+      errorAlert.classList.remove('show');
+      form.reset();
+      form.style.display = 'none';
+      delete form.dataset.editId;
+      loadVehicles();
+    }
+
+    function loadVehicles() {
+      const vehicles = CarSevaStore.listVehicles(user);
+
+      if (vehicles.length === 0) {
+        vehiclesList.innerHTML = '<div class="empty-state"><div class="icon">&#128663;</div><p>No vehicles registered yet. Register your first vehicle to get started.</p></div>';
+        return;
+      }
+
+      vehiclesList.innerHTML = vehicles.map(function (vehicle) {
+        return `
+          <div class="booking-item">
+            <div class="booking-info">
+              <strong>${escHtml(vehicle.name)}</strong>
+              <div class="booking-details">
+                <span>Brand: ${escHtml(vehicle.brand)} ${escHtml(vehicle.model)} (${vehicle.year})</span>
+                <span>Plate: ${escHtml(vehicle.vehicleNumber)}</span>
+              </div>
+            </div>
+            <div class="actions-row-tight">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="edit" data-id="${vehicle.id}">Edit</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-action="documents" data-id="${vehicle.id}" data-name="${escHtml(vehicle.name)}">Documents</button>
+              <button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="${vehicle.id}" data-name="${escHtml(vehicle.name)}">Delete</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      vehiclesList.querySelectorAll('button[data-action]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const action = button.getAttribute('data-action');
+          const id = button.getAttribute('data-id');
+          const name = button.getAttribute('data-name') || '';
+
+          if (action === 'edit') {
+            editVehicle(id);
+          } else if (action === 'documents') {
+            viewDocuments(id, name);
+          } else if (action === 'delete') {
+            deleteVehicle(id, name);
+          }
+        });
+      });
+    }
+
+    window.editVehicle = function (id) {
+      const vehicle = CarSevaStore.listVehicles(user).find(function (item) { return item.id === id; });
+      if (!vehicle) return;
+      document.getElementById('vehicleName').value = vehicle.name;
+      document.getElementById('vehicleNumber').value = vehicle.vehicleNumber;
+      document.getElementById('brand').value = vehicle.brand;
+      document.getElementById('model').value = vehicle.model;
+      document.getElementById('year').value = vehicle.year;
+      form.dataset.editId = id;
+      form.style.display = 'block';
+      form.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    window.viewDocuments = function (vehicleId, vehicleName) {
+      window.location.href = `documents.html?vehicleId=${vehicleId}&vehicleName=${encodeURIComponent(vehicleName)}`;
+    };
+
+    window.deleteVehicle = function (id, name) {
+      if (!confirm(`Are you sure you want to delete "${name}" from your vehicles?`)) return;
+      try {
+        CarSevaStore.deleteVehicle(user, id);
+        showSuccess('Vehicle deleted successfully.');
+      } catch (error) {
+        showError(error.message || 'Unable to delete vehicle.');
+      }
+    };
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const name = document.getElementById('vehicleName').value.trim();
+      const plate = CarSevaStore.normalizePlate(document.getElementById('vehicleNumber').value);
+      const brand = document.getElementById('brand').value.trim();
+      const model = document.getElementById('model').value.trim();
+      const year = parseInt(document.getElementById('year').value, 10);
+
+      let valid = true;
+
+      if (!name) {
+        document.getElementById('nameError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('nameError').style.display = 'none';
+      }
+
+      if (!CarSevaStore.isValidIndianPlate(plate)) {
+        document.getElementById('plateError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('plateError').style.display = 'none';
+      }
+
+      if (!brand) {
+        document.getElementById('brandError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('brandError').style.display = 'none';
+      }
+
+      if (!model) {
+        document.getElementById('modelError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('modelError').style.display = 'none';
+      }
+
+      if (!year || year < 1900 || year > 2099) {
+        document.getElementById('yearError').style.display = 'block';
+        valid = false;
+      } else {
+        document.getElementById('yearError').style.display = 'none';
+      }
+
+      if (!valid) return;
+
+      try {
+        CarSevaStore.saveVehicle(user, {
+          name,
+          vehicleNumber: plate,
+          brand,
+          model,
+          year
+        }, form.dataset.editId || null);
+        showSuccess(form.dataset.editId ? 'Vehicle updated successfully.' : 'Vehicle registered successfully.');
+      } catch (error) {
+        showError(error.message || 'Unable to save vehicle.');
+      }
+    });
+
+    loadVehicles();
+  </script>
+
+</body>
+</html>

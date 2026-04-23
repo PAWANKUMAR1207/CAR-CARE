@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - Booking Confirmation</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav>
+    <span class="brand">&#9881; CarSeva</span>
+    <a href="index.html" id="logoutBtn">Sign Out</a>
+  </nav>
+
+  <div class="page top">
+    <div class="card wide">
+      <a href="dashboard.html" class="back-link">&#8592; Back to Dashboard</a>
+
+      <div class="confirmation-header">
+        <div class="card-icon no-margin">&#10003;</div>
+        <div>
+          <h1 class="left-align">Booking Confirmed</h1>
+          <p class="sub left-align no-margin">Your service slot is locked in and the confirmation details are ready below.</p>
+        </div>
+      </div>
+
+      <div class="confirmation-grid" id="confirmationGrid"></div>
+
+      <div class="section-title section-gap">Confirmation Notification</div>
+      <div class="notification-preview" id="notificationPreview"></div>
+
+      <div class="section-title section-gap">Email Template</div>
+      <pre class="email-template" id="emailTemplate"></pre>
+
+      <div class="section-actions">
+        <a href="dashboard.html" class="btn btn-outline">Go To Dashboard</a>
+        <a href="service-history.html" class="btn btn-secondary">View History</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script>
+    const user = JSON.parse(localStorage.getItem('cc_user') || 'null');
+    const token = localStorage.getItem('cc_token');
+    if (!user || !token) window.location.href = 'index.html';
+
+    document.getElementById('logoutBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      CarSevaStore.logout();
+      window.location.href = 'index.html';
+    });
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+      }).format(Number(amount || 0));
+    }
+
+    const booking = CarSevaStore.getConfirmationDraft();
+    if (!booking) {
+      window.location.href = 'dashboard.html';
+    }
+
+    const tax = Number((Number(booking.servicePrice || 0) * 0.18).toFixed(2));
+    const total = Number((Number(booking.servicePrice || 0) + tax).toFixed(2));
+
+    document.getElementById('confirmationGrid').innerHTML = `
+      <div class="summary-card">
+        <span>Booking Reference</span>
+        <strong>${escHtml(booking.bookingReference || '')}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Vehicle</span>
+        <strong>${escHtml(booking.vehicleName)}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Number Plate</span>
+        <strong>${escHtml(booking.vehicleNumber)}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Service</span>
+        <strong>${escHtml(booking.serviceType)}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Center</span>
+        <strong>${escHtml(booking.centerName || 'Assigned Center')}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Date And Time</span>
+        <strong>${escHtml(booking.date)} / ${escHtml(booking.timeSlot)}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Estimated Total</span>
+        <strong>${formatCurrency(total)}</strong>
+      </div>
+      <div class="summary-card">
+        <span>Status</span>
+        <strong>${escHtml(booking.status)}</strong>
+      </div>
+    `;
+
+    document.getElementById('notificationPreview').innerHTML = `
+      <strong>Booking confirmed for ${escHtml(booking.serviceType)}</strong>
+      <p>${escHtml(booking.bookingReference)} is scheduled at ${escHtml(booking.centerName || 'your selected center')} on ${escHtml(booking.date)} during ${escHtml(booking.timeSlot)}.</p>
+    `;
+
+    document.getElementById('emailTemplate').textContent = [
+      `Subject: CarSeva booking confirmed - ${booking.bookingReference}`,
+      '',
+      `Hi ${booking.customerName || user.name || 'Customer'},`,
+      '',
+      `Your ${booking.serviceType} booking is confirmed.`,
+      `Booking reference: ${booking.bookingReference}`,
+      `Vehicle: ${booking.vehicleName} (${booking.vehicleNumber})`,
+      `Center: ${booking.centerName || 'Assigned Center'}`,
+      `Date: ${booking.date}`,
+      `Time slot: ${booking.timeSlot}`,
+      `Estimated total: ${formatCurrency(total)}`,
+      '',
+      'Thank you for choosing CarSeva.'
+    ].join('\n');
+
+    CarSevaStore.clearConfirmationDraft();
+  </script>
+</body>
+</html>

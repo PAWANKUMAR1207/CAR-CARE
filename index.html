@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - Login</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="auth-body">
+  <nav class="app-nav">
+    <span class="brand"><span class="brand-mark">CS</span> CarSeva</span>
+    <span class="nav-muted">Service lifecycle platform</span>
+  </nav>
+
+  <main class="auth-layout">
+    <section class="auth-visual" aria-label="CarSeva overview">
+      <div class="visual-panel">
+        <div class="vehicle-plate">KA 01 CS 2026</div>
+        <div class="road-scene">
+          <div class="car-shape">
+            <span></span>
+            <i></i>
+            <b></b>
+          </div>
+        </div>
+        <div class="signal-row">
+          <div><strong>Tracking</strong><span>Received to completed</span></div>
+          <div><strong>Updates</strong><span>Notes and images</span></div>
+          <div><strong>Alerts</strong><span>Stored notifications</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="auth-card">
+      <div class="auth-heading">
+        <p class="eyebrow">Choose portal</p>
+        <h1>Sign in to CarSeva</h1>
+        <p>Customers book and track services. Mechanics update progress, add notes, and close invoices.</p>
+      </div>
+
+      <div class="portal-tabs" role="tablist" aria-label="Login portal">
+        <button type="button" class="portal-tab active" data-role="customer">Customer Login</button>
+        <button type="button" class="portal-tab" data-role="mechanic">Mechanic Login</button>
+      </div>
+
+      <div class="seed-box" id="seedBox">
+        Customer demo: customer@carseva.com / customer123
+      </div>
+
+      <div class="alert alert-success" id="successAlert">Login successful. Redirecting...</div>
+
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="customer@carseva.com" autocomplete="email" />
+          <span class="error-msg" id="emailError">Please enter your email.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Minimum 6 characters" autocomplete="current-password" />
+          <span class="error-msg" id="passwordError">Please enter your password.</span>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Sign In</button>
+      </form>
+
+      <div class="register-panel" id="registerPanel">
+        <div class="section-title">New Customer</div>
+        <form id="registerForm" novalidate>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="registerName">Name</label>
+              <input type="text" id="registerName" placeholder="Your full name" autocomplete="name" />
+              <span class="error-msg" id="nameError">Please enter your name.</span>
+            </div>
+            <div class="form-group">
+              <label for="registerEmail">Email</label>
+              <input type="email" id="registerEmail" placeholder="driver@example.com" autocomplete="email" />
+              <span class="error-msg" id="registerEmailError">Please enter a valid email.</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="registerPassword">Password</label>
+            <input type="password" id="registerPassword" placeholder="Minimum 6 characters" autocomplete="new-password" />
+            <span class="error-msg" id="registerPasswordError">Password must be at least 6 characters.</span>
+          </div>
+          <button type="submit" class="btn btn-outline full-width">Create Customer Account</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="app-data.js"></script>
+  <script>
+    const existingUser = CarSevaStore.getCurrentUser();
+    if (existingUser && CarSevaStore.getToken()) {
+      window.location.href = existingUser.role === 'mechanic' || existingUser.role === 'admin'
+        ? 'admin.html'
+        : 'dashboard.html';
+    }
+
+    const state = { role: 'customer' };
+    const form = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    const successAlert = document.getElementById('successAlert');
+    const registerPanel = document.getElementById('registerPanel');
+    const seedBox = document.getElementById('seedBox');
+
+    document.querySelectorAll('.portal-tab').forEach(function (button) {
+      button.addEventListener('click', function () {
+        state.role = button.getAttribute('data-role');
+        document.querySelectorAll('.portal-tab').forEach(function (tab) {
+          tab.classList.toggle('active', tab === button);
+        });
+        registerPanel.style.display = state.role === 'customer' ? 'block' : 'none';
+        seedBox.textContent = state.role === 'customer'
+          ? 'Customer demo: customer@carseva.com / customer123'
+          : 'Mechanic demo: mechanic@carseva.com / mechanic123';
+        emailInput.placeholder = state.role === 'customer' ? 'customer@carseva.com' : 'mechanic@carseva.com';
+        successAlert.classList.remove('show');
+      });
+    });
+
+    function showError(id, message) {
+      const node = document.getElementById(id);
+      node.textContent = message;
+      node.classList.add('show');
+    }
+
+    function clearErrors(ids) {
+      ids.forEach(function (id) {
+        document.getElementById(id).classList.remove('show');
+      });
+    }
+
+    function validEmail(value) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      const password = passwordInput.value.trim();
+      clearErrors(['emailError', 'passwordError']);
+
+      if (!email || !validEmail(email)) {
+        showError('emailError', 'Please enter a valid email address.');
+        return;
+      }
+      if (!password) {
+        showError('passwordError', 'Please enter your password.');
+        return;
+      }
+
+      try {
+        const user = CarSevaStore.loginAs(email, password, state.role);
+        successAlert.textContent = 'Login successful. Redirecting...';
+        successAlert.classList.add('show');
+        setTimeout(function () {
+          window.location.href = user.role === 'mechanic' || user.role === 'admin'
+            ? 'admin.html'
+            : 'dashboard.html';
+        }, 500);
+      } catch (error) {
+        showError('passwordError', error.message || 'Login failed.');
+      }
+    });
+
+    registerForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const name = document.getElementById('registerName').value.trim();
+      const email = document.getElementById('registerEmail').value.trim();
+      const password = document.getElementById('registerPassword').value.trim();
+      clearErrors(['nameError', 'registerEmailError', 'registerPasswordError']);
+
+      let valid = true;
+      if (!name) {
+        showError('nameError', 'Please enter your name.');
+        valid = false;
+      }
+      if (!email || !validEmail(email)) {
+        showError('registerEmailError', 'Please enter a valid email address.');
+        valid = false;
+      }
+      if (!password || password.length < 6) {
+        showError('registerPasswordError', 'Password must be at least 6 characters.');
+        valid = false;
+      }
+      if (!valid) return;
+
+      try {
+        CarSevaStore.register(name, email, password);
+        successAlert.textContent = 'Customer account created. Redirecting...';
+        successAlert.classList.add('show');
+        setTimeout(function () {
+          window.location.href = 'dashboard.html';
+        }, 500);
+      } catch (error) {
+        showError('registerPasswordError', error.message || 'Registration failed.');
+      }
+    });
+  </script>
+</body>
+</html>

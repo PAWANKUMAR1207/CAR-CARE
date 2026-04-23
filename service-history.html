@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - Service History</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <nav>
+    <span class="brand">&#9881; CarSeva</span>
+    <a href="index.html" id="logoutBtn">Sign Out</a>
+  </nav>
+
+  <div class="page top">
+    <div class="card wide">
+      <div class="dash-header">
+        <div>
+          <h1>Service History</h1>
+          <p class="text-muted-sm">View all completed services and invoices.</p>
+        </div>
+        <div class="actions-row">
+          <a href="dashboard.html" class="btn btn-outline">Back to Dashboard</a>
+        </div>
+      </div>
+
+      <div class="section-title">Completed Services</div>
+      <div id="servicesList"></div>
+    </div>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script>
+    const user = JSON.parse(localStorage.getItem('cc_user') || 'null');
+    const token = localStorage.getItem('cc_token');
+    if (!user || !token) window.location.href = 'index.html';
+
+    const servicesList = document.getElementById('servicesList');
+
+    document.getElementById('logoutBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      CarSevaStore.logout();
+      window.location.href = 'index.html';
+    });
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 2
+      }).format(Number(amount || 0));
+    }
+
+    function formatDate(dateString) {
+      return new Date(dateString).toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function loadServiceHistory() {
+      const services = CarSevaStore.listServiceHistory(user);
+
+      if (services.length === 0) {
+        servicesList.innerHTML = '<div class="empty-state"><div class="icon">&#128202;</div><p>No completed services yet. Your completed services will appear here.</p></div>';
+        return;
+      }
+
+      servicesList.innerHTML = services.map(function (service) {
+        return `
+          <div class="booking-item">
+            <div class="booking-info">
+              <strong>${escHtml(service.serviceType)}</strong>
+              <div class="booking-details">
+                <span>Vehicle: ${escHtml(service.vehicleName)}</span>
+                <span>Plate: ${escHtml(service.vehicleNumber)}</span>
+                <span>Date: ${formatDate(service.completedAt)}</span>
+                <span>Cost: ${formatCurrency(service.cost)}</span>
+              </div>
+            </div>
+            <div class="actions-row-tight">
+              ${service.invoice ? `<button type="button" class="btn btn-secondary btn-sm" data-action="download-invoice" data-invoice-id="${escHtml(service.invoice.invoiceId)}">Download Invoice</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+      servicesList.querySelectorAll('button[data-action="download-invoice"]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const targetService = services.find(function (item) {
+            return item.invoice && item.invoice.invoiceId === button.getAttribute('data-invoice-id');
+          });
+          if (targetService && targetService.invoice) {
+            CarSevaStore.downloadInvoicePdf(targetService.id).catch(function (error) {
+              alert(error.message || 'Unable to download invoice.');
+            });
+          }
+        });
+      });
+    }
+
+    loadServiceHistory();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CarSeva - Mechanic Workbench</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <nav>
+    <span class="brand"><span class="brand-mark">CS</span> CarSeva</span>
+    <a href="index.html" id="logoutBtn">Sign Out</a>
+  </nav>
+
+  <div class="page top">
+    <div class="card wide">
+      <div class="dash-header">
+        <div>
+          <h1>Mechanic Workbench</h1>
+          <p class="sub">Update service progress, add repair notes, attach images, and close invoices.</p>
+          <div class="live-chip" id="adminLiveChip">Workbench live</div>
+        </div>
+        <a href="dashboard.html" class="btn btn-outline">Dashboard</a>
+      </div>
+
+      <div class="update-panel">
+        <div class="form-row form-row-3">
+          <div>
+            <span class="badge">Role based access</span>
+            <p class="sub top-gap-sm">Only mechanic accounts can update service status.</p>
+          </div>
+          <div>
+            <span class="badge">Event notifications</span>
+            <p class="sub top-gap-sm">Each status update is saved and sent to the customer history.</p>
+          </div>
+          <div>
+            <span class="badge">Timeline storage</span>
+            <p class="sub top-gap-sm">Received, Inspection, In Progress, and Completed are tracked.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Workbench Analytics</div>
+      <div class="confirmation-grid" id="adminStatsGrid"></div>
+
+      <div class="section-title">Active Service Jobs</div>
+      <div class="catalog-toolbar">
+        <select id="statusFilter">
+          <option value="all">All statuses</option>
+        </select>
+        <input type="search" id="bookingSearch" placeholder="Search by customer, vehicle, or reference" />
+      </div>
+      <div class="catalog-toolbar">
+        <select id="centerFilter">
+          <option value="all">All centers</option>
+        </select>
+        <input type="date" id="dateFilter" />
+      </div>
+      <div class="booking-list" id="mechanicBookingList"></div>
+
+      <div class="section-title section-gap">Completed Services</div>
+      <div class="booking-list" id="completedList"></div>
+    </div>
+  </div>
+
+  <script src="app-data.js"></script>
+  <script>
+    const user = JSON.parse(localStorage.getItem('cc_user') || 'null');
+    const token = localStorage.getItem('cc_token');
+    if (!user || !token) window.location.href = 'index.html';
+    if (user.role !== 'mechanic' && user.role !== 'admin') {
+      alert('Only mechanics can access this page.');
+      window.location.href = 'dashboard.html';
+    }
+
+    const stages = CarSevaStore.getStatusStages();
+    const statusFilterInput = document.getElementById('statusFilter');
+    const bookingSearchInput = document.getElementById('bookingSearch');
+    const centerFilterInput = document.getElementById('centerFilter');
+    const dateFilterInput = document.getElementById('dateFilter');
+    let allActiveBookings = [];
+
+    document.getElementById('logoutBtn').addEventListener('click', function (e) {
+      e.preventDefault();
+      CarSevaStore.logout();
+      window.location.href = 'index.html';
+    });
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function statusClassName(status) {
+      if (status === 'Received') return 'status-received';
+      if (status === 'Inspection') return 'status-inspection';
+      if (status === 'In Progress') return 'status-in-progress';
+      if (status === 'Completed') return 'status-completed';
+      return 'status-pending';
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 2
+      }).format(Number(amount || 0));
+    }
+
+    function formatDate(value) {
+      if (!value) return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function getPriorityLabel(booking) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (booking.date < today) return 'Overdue';
+      if (booking.date === today) return 'Today';
+      if (booking.status === 'Inspection') return 'Urgent';
+      return 'Normal';
+    }
+
+    function renderTimeline(booking) {
+      const timeline = Array.isArray(booking.timeline) ? booking.timeline : [];
+      const currentIndex = Math.max(0, stages.indexOf(booking.status));
+      const latestByStatus = {};
+      timeline.forEach(function (item) {
+        latestByStatus[item.status] = item;
+      });
+
+      return `<div class="timeline">${stages.map(function (stage, index) {
+        const item = latestByStatus[stage];
+        const active = index <= currentIndex || Boolean(item);
+        return `
+          <div class="timeline-step ${active ? 'active' : ''}">
+            <span class="timeline-dot"></span>
+            <div>
+              <strong>${escHtml(stage)}</strong>
+              <span>${item ? escHtml(item.note || 'Updated') : 'Not reached yet'}</span>
+              ${item ? `<span>${escHtml(formatDate(item.createdAt))} by ${escHtml(item.actorName || 'Mechanic')}</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('')}</div>`;
+    }
+
+    function renderImages(booking) {
+      const images = Array.isArray(booking.updateImages) ? booking.updateImages : [];
+      if (images.length === 0) return '';
+      return `<div class="service-image-grid">${images.map(function (image) {
+        return `<a href="${image.dataUrl}" download="${escHtml(image.fileName || 'service-image')}"><img src="${image.dataUrl}" alt="${escHtml(image.fileName || 'Service image')}" /></a>`;
+      }).join('')}</div>`;
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise(function (resolve, reject) {
+        if (!file) {
+          resolve('');
+          return;
+        }
+        if (!file.type.startsWith('image/')) {
+          reject(new Error('Please upload an image file.'));
+          return;
+        }
+        if (file.size > 3 * 1024 * 1024) {
+          reject(new Error('Service image must be 3MB or smaller.'));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(new Error('Unable to read image.')); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function submitUpdate(bookingId) {
+      const status = document.getElementById('status-' + bookingId).value;
+      const notes = document.getElementById('notes-' + bookingId).value.trim();
+      const imageInput = document.getElementById('image-' + bookingId);
+      const imageFile = imageInput.files && imageInput.files[0] ? imageInput.files[0] : null;
+
+      try {
+        const imageDataUrl = await readFileAsDataUrl(imageFile);
+        const result = CarSevaStore.updateBookingStatus(user, bookingId, status, {
+          notes,
+          imageDataUrl,
+          imageName: imageFile ? imageFile.name : ''
+        });
+
+        if (status === 'Completed' && result.invoice) {
+          alert('Service completed. Invoice generated: ' + result.invoice.invoiceId);
+        } else {
+          alert('Service updated to ' + status + '.');
+        }
+        loadDataAndRender();
+      } catch (error) {
+        alert(error.message || 'Unable to update service.');
+      }
+    }
+
+    function renderActiveBookings(bookings) {
+      const list = document.getElementById('mechanicBookingList');
+      const statusFilter = statusFilterInput.value;
+      const centerFilter = centerFilterInput.value;
+      const dateFilter = dateFilterInput.value;
+      const search = bookingSearchInput.value.trim().toLowerCase();
+      const filteredBookings = bookings.filter(function (booking) {
+        const statusMatch = statusFilter === 'all' || booking.status === statusFilter;
+        const centerMatch = centerFilter === 'all' || (booking.centerId || '') === centerFilter;
+        const dateMatch = !dateFilter || booking.date === dateFilter;
+        const haystack = `${booking.customerName || ''} ${booking.userEmail || ''} ${booking.vehicleName || ''} ${booking.bookingReference || ''}`.toLowerCase();
+        const searchMatch = !search || haystack.includes(search);
+        return statusMatch && centerMatch && dateMatch && searchMatch;
+      });
+      if (filteredBookings.length === 0) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">&#128295;</div><p>No active service jobs right now.</p></div>';
+        return;
+      }
+
+      list.innerHTML = filteredBookings.map(function (booking) {
+        const priority = getPriorityLabel(booking);
+        return `
+          <div class="booking-item animate-enter">
+            <div class="booking-left">
+              <div class="vehicle">${escHtml(booking.vehicleName)} <span class="badge">${escHtml(booking.bookingReference || '')}</span></div>
+              <div class="meta">
+                <span>${escHtml(booking.customerName || booking.userEmail || '-')}</span>
+                <span>${escHtml(booking.serviceType)}</span>
+                <span>${escHtml(booking.centerName || 'Assigned center')}</span>
+                <span>${escHtml(booking.date)} / ${escHtml(booking.timeSlot)}</span>
+                <span>Plate ${escHtml(booking.vehicleNumber || '-')}</span>
+                <span class="status-chip ${priority === 'Overdue' ? 'status-in-progress' : priority === 'Today' ? 'status-inspection' : priority === 'Urgent' ? 'status-received' : 'status-completed'}">Priority ${escHtml(priority)}</span>
+              </div>
+              ${renderTimeline(booking)}
+              ${renderImages(booking)}
+              <div class="update-panel">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="status-${escHtml(booking.id)}">Service Status</label>
+                    <select id="status-${escHtml(booking.id)}">
+                      ${stages.map(function (stage) {
+                        return `<option value="${escHtml(stage)}" ${stage === booking.status ? 'selected' : ''}>${escHtml(stage)}</option>`;
+                      }).join('')}
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="image-${escHtml(booking.id)}">Service Image</label>
+                    <input type="file" id="image-${escHtml(booking.id)}" accept="image/*" />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="notes-${escHtml(booking.id)}">Repair Notes</label>
+                  <textarea id="notes-${escHtml(booking.id)}" placeholder="Add inspection findings, replaced parts, next steps, or delivery notes.">${escHtml(booking.mechanicNotes || '')}</textarea>
+                </div>
+                <button class="btn btn-primary" type="button" data-update-id="${escHtml(booking.id)}">Save Service Update</button>
+              </div>
+            </div>
+            <div class="booking-right">
+              <span class="status-chip ${statusClassName(booking.status)}">${escHtml(booking.status)}</span>
+              <button class="btn btn-outline btn-sm" data-documents-plate="${escHtml(booking.vehicleNumber || '')}" data-documents-name="${escHtml(booking.vehicleName)}">Documents</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      revealAnimatedNodes(list);
+
+      list.querySelectorAll('[data-update-id]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          submitUpdate(button.getAttribute('data-update-id'));
+        });
+      });
+
+      list.querySelectorAll('[data-documents-plate]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          window.location.href = `documents.html?vehicleNumber=${encodeURIComponent(button.getAttribute('data-documents-plate'))}&vehicleName=${encodeURIComponent(button.getAttribute('data-documents-name'))}`;
+        });
+      });
+    }
+
+    function renderCompleted(completed) {
+      const completedList = document.getElementById('completedList');
+      if (completed.length === 0) {
+        completedList.innerHTML = '<div class="empty-state"><div class="icon">&#128221;</div><p>No completed services yet.</p></div>';
+        return;
+      }
+
+      completedList.innerHTML = completed.map(function (booking) {
+        const invoiceDetails = booking.invoice
+          ? `<div class="invoice-box">
+               <div>Cost: <strong>${formatCurrency(booking.invoice.cost)}</strong></div>
+               <div>Tax: <strong>${formatCurrency(booking.invoice.tax)}</strong></div>
+               <div>Total: <strong>${formatCurrency(booking.invoice.total)}</strong></div>
+               <div>Invoice: <strong>${escHtml(booking.invoice.invoiceId)}</strong></div>
+             </div>`
+          : '<div class="invoice-box"><div>Invoice missing.</div></div>';
+
+        return `
+          <div class="booking-item animate-enter">
+            <div class="booking-left">
+              <div class="vehicle">${escHtml(booking.vehicleName)} <span class="badge">${escHtml(booking.bookingReference || '')}</span></div>
+              <div class="meta">
+                <span>${escHtml(booking.userEmail || '-')}</span>
+                <span>${escHtml(booking.serviceType)}</span>
+                <span>Plate ${escHtml(booking.vehicleNumber || '-')}</span>
+                <span>Completed ${escHtml(formatDate(booking.completedAt))}</span>
+              </div>
+              ${renderTimeline(booking)}
+              ${renderImages(booking)}
+              ${invoiceDetails}
+            </div>
+            <div class="booking-right">
+              <span class="status-chip status-completed">Completed</span>
+              <button class="btn btn-outline btn-sm" data-download-id="${escHtml(booking.id)}" ${booking.invoice ? '' : 'disabled'}>Invoice</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      revealAnimatedNodes(completedList);
+
+      completedList.querySelectorAll('[data-download-id]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          const bookingId = button.getAttribute('data-download-id');
+          CarSevaStore.downloadInvoicePdf(bookingId).catch(function (error) {
+            alert(error.message || 'Unable to download invoice.');
+          });
+        });
+      });
+    }
+
+    function renderAdminStats() {
+      const stats = CarSevaStore.getDashboardStats();
+      const grid = document.getElementById('adminStatsGrid');
+      const cards = [
+        { label: 'Active Jobs', value: stats.activeBookings || 0 },
+        { label: 'Completed Jobs', value: stats.completedBookings || 0 },
+        { label: 'Overdue Jobs', value: stats.overdueBookings || 0 },
+        { label: 'Revenue Today', value: formatCurrency(stats.revenueToday || 0) }
+      ];
+
+      grid.innerHTML = cards.map(function (item) {
+        return `
+          <div class="summary-card animate-enter">
+            <span>${escHtml(item.label)}</span>
+            <strong>${escHtml(String(item.value))}</strong>
+          </div>
+        `;
+      }).join('');
+      revealAnimatedNodes(grid);
+    }
+
+    function refreshLiveChip() {
+      const now = new Date();
+      const text = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('adminLiveChip').textContent = 'Workbench live ' + text;
+    }
+
+    function revealAnimatedNodes(container) {
+      container.querySelectorAll('.animate-enter').forEach(function (node, index) {
+        setTimeout(function () {
+          node.classList.add('is-visible');
+        }, Math.min(220, index * 25));
+      });
+    }
+
+    function loadDataAndRender() {
+      allActiveBookings = CarSevaStore.listActiveBookings(user);
+      const centers = Array.from(new Set(allActiveBookings.map(function (item) { return item.centerId || ''; }))).filter(Boolean);
+      centerFilterInput.innerHTML = '<option value="all">All centers</option>' + centers.map(function (centerId) {
+        const found = allActiveBookings.find(function (item) { return item.centerId === centerId; });
+        const name = found ? found.centerName : centerId;
+        return `<option value="${escHtml(centerId)}">${escHtml(name)}</option>`;
+      }).join('');
+      renderActiveBookings(allActiveBookings);
+      renderCompleted(CarSevaStore.listCompletedBookings(user));
+      renderAdminStats();
+    }
+
+    statusFilterInput.innerHTML = '<option value="all">All statuses</option>' + stages.map(function (stage) {
+      return `<option value="${escHtml(stage)}">${escHtml(stage)}</option>`;
+    }).join('');
+
+    statusFilterInput.addEventListener('change', function () {
+      renderActiveBookings(allActiveBookings);
+    });
+
+    bookingSearchInput.addEventListener('input', function () {
+      renderActiveBookings(allActiveBookings);
+    });
+
+    centerFilterInput.addEventListener('change', function () {
+      renderActiveBookings(allActiveBookings);
+    });
+
+    dateFilterInput.addEventListener('change', function () {
+      renderActiveBookings(allActiveBookings);
+    });
+
+    loadDataAndRender();
+    refreshLiveChip();
+    setInterval(refreshLiveChip, 1000);
+    window.addEventListener('storage', loadDataAndRender);
+    setInterval(loadDataAndRender, 5000);
+  </script>
+</body>
+</html>
